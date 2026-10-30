@@ -189,9 +189,6 @@
       const [isLoadingStream, setIsLoadingStream] = useState(false);
       const [loadingText, setLoadingText] = useState("PARSING AUDIO FEED...");
       
-      const [playbackProgress, setPlaybackProgress] = useState(0);
-      const [currentTimeFormatted, setCurrentTimeFormatted] = useState("00:00");
-      const [durationFormatted, setDurationFormatted] = useState("00:00");
       const [volume, setVolume] = useState(1.0);
       const [isMuted, setIsMuted] = useState(false);
 
@@ -204,6 +201,10 @@
       const sourceNodeRef = useRef(null);
       const fileInputRef = useRef(null);
       const progressBarRef = useRef(null);
+      const progressFillRef = useRef(null);
+      const progressThumbRef = useRef(null);
+      const timeCurrentRef = useRef(null);
+      const timeDurationRef = useRef(null);
       const volumeBarRef = useRef(null);
 
       const isDraggingRef = useRef(false);
@@ -358,12 +359,21 @@
         }
       };
 
+      const syncSeekerUI = (curr, dur) => {
+        if (!dur || dur <= 0) return;
+        const ratio = Math.max(0, Math.min(1, curr / dur));
+        const pct = (ratio * 100).toFixed(2) + "%";
+        if (progressFillRef.current) progressFillRef.current.style.width = pct;
+        if (progressThumbRef.current) progressThumbRef.current.style.left = pct;
+        if (timeCurrentRef.current) timeCurrentRef.current.textContent = formatTime(curr);
+        if (timeDurationRef.current) timeDurationRef.current.textContent = formatTime(dur);
+      };
+
       const restartTrack = () => {
         if (audioRef.current) {
           audioRef.current.currentTime = 0;
           audioTimeRef.current = 0;
-          setPlaybackProgress(0);
-          setCurrentTimeFormatted("00:00");
+          syncSeekerUI(0, audioRef.current.duration || 1);
           if (!isPlaying && audioSourceType === "file") {
             initWebAudio();
             audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(true));
@@ -405,6 +415,7 @@
           audioRef.current.src = url;
           audioRef.current.currentTime = 0;
           audioTimeRef.current = 0;
+          syncSeekerUI(0, 1);
           audioRef.current.load();
           audioRef.current.play()
             .then(() => {
@@ -426,8 +437,7 @@
         const targetTime = ratio * audioRef.current.duration;
         audioRef.current.currentTime = targetTime;
         audioTimeRef.current = targetTime;
-        setPlaybackProgress(ratio);
-        setCurrentTimeFormatted(formatTime(targetTime));
+        syncSeekerUI(targetTime, audioRef.current.duration);
       };
 
       const applyVolumeFromClientY = (clientY) => {
@@ -487,6 +497,7 @@
               const nextTime = Math.max(0, Math.min(audioRef.current.duration, audioRef.current.currentTime + step));
               audioRef.current.currentTime = nextTime;
               audioTimeRef.current = nextTime;
+              syncSeekerUI(nextTime, audioRef.current.duration);
             }
           } else if (target === "volume") {
             if (audioRef.current) {
@@ -862,10 +873,7 @@
           if (audioSourceType === "file" && audioRef.current && !audioRef.current.paused) {
             audioTimeRef.current = audioRef.current.currentTime;
             const dur = audioRef.current.duration || 1;
-            const prog = audioRef.current.currentTime / dur;
-            setPlaybackProgress(prog);
-            setCurrentTimeFormatted(formatTime(audioRef.current.currentTime));
-            setDurationFormatted(formatTime(dur));
+            syncSeekerUI(audioRef.current.currentTime, dur);
           }
 
           if (audioSourceType === "file" && analyserRef.current) {
@@ -1206,7 +1214,7 @@
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="text-[9px] sm:text-xs font-medium tracking-wider uppercase px-2.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md hover:bg-white hover:text-black shadow-lg transition-all duration-300 cursor-pointer whitespace-nowrap"
+                className="text-[9px] sm:text-xs font-bold tracking-wider uppercase px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white hover:!text-black active:scale-95 shadow-lg transition-all duration-300 cursor-pointer whitespace-nowrap"
                 style={{ color: activePalette.ink }}
               >
                 Load
@@ -1214,7 +1222,7 @@
 
               <button
                 onClick={() => setPaletteIndex((prev) => (prev + 1) % PALETTES.length)}
-                className="text-[9px] sm:text-xs font-bold tracking-wider uppercase px-2.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full shadow-lg transition-all duration-300 cursor-pointer hover:scale-105 whitespace-nowrap"
+                className="text-[9px] sm:text-xs font-bold tracking-wider uppercase px-2.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full shadow-lg transition-all duration-300 cursor-pointer hover:scale-105 active:scale-95 whitespace-nowrap"
                 style={{
                   backgroundColor: activePalette.accent,
                   color: activePalette.bg,
@@ -1231,10 +1239,13 @@
             onMouseEnter={() => { hoverTargetRef.current = "volume"; }}
             onMouseLeave={() => { hoverTargetRef.current = null; }}
           >
-            <div className="flex flex-col items-center px-2 py-3 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-xl space-y-3">
+            <div 
+              className="flex flex-col items-center p-2.5 rounded-full bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl transition-all duration-300 hover:border-white/25 hover:bg-white/10 space-y-3"
+              style={{ boxShadow: `0 8px 32px 0 rgba(0, 0, 0, 0.4)` }}
+            >
               <button 
                 onClick={toggleMute}
-                className="w-5 h-5 flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity"
+                className="w-6 h-6 rounded-full flex items-center justify-center opacity-70 hover:opacity-100 hover:scale-110 active:scale-90 transition-all cursor-pointer"
                 style={{ color: isMuted ? "#ef4444" : activePalette.ink }}
                 title="Toggle Mute"
               >
@@ -1256,19 +1267,19 @@
                   isDraggingVolRef.current = true;
                   applyVolumeFromClientY(e.clientY);
                 }}
-                className="relative w-1.5 h-20 sm:h-24 bg-white/10 rounded-full overflow-hidden cursor-pointer"
+                className="relative w-2 h-24 sm:h-28 bg-white/10 hover:bg-white/15 rounded-full overflow-hidden cursor-pointer transition-colors"
               >
                 <div 
                   className="absolute bottom-0 left-0 right-0 rounded-full transition-all duration-75"
                   style={{
                     height: `${isMuted ? 0 : volume * 100}%`,
                     backgroundColor: activePalette.accent,
-                    boxShadow: `0 0 8px ${activePalette.glow}`
+                    boxShadow: `0 0 10px ${activePalette.glow}`
                   }}
                 />
               </div>
 
-              <span className="text-[8px] font-mono opacity-60 tracking-tighter">
+              <span className="text-[9px] font-mono font-semibold opacity-70 tracking-tight tabular-nums">
                 {isMuted ? "0" : Math.round(volume * 100)}
               </span>
             </div>
@@ -1366,12 +1377,12 @@
 
           <footer className="relative z-30 pb-[max(1rem,env(safe-area-inset-bottom))] px-4 sm:px-8 md:px-12 flex flex-col items-center w-full mb-1 sm:mb-2 space-y-2 pointer-events-none">
             <div 
-              className="w-full max-w-xl pointer-events-auto flex items-center space-x-3 px-4 py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-lg"
+              className="w-full max-w-xl pointer-events-auto flex items-center space-x-3 px-4 py-2 rounded-full bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl transition-all duration-300 hover:border-white/20"
               onMouseEnter={() => { hoverTargetRef.current = "seeker"; }}
               onMouseLeave={() => { hoverTargetRef.current = null; }}
             >
-              <span className="text-[10px] font-mono opacity-60 w-9 text-right tabular-nums">
-                {currentTimeFormatted}
+              <span ref={timeCurrentRef} className="text-[10px] sm:text-xs font-mono font-medium opacity-70 w-10 text-right tabular-nums">
+                00:00
               </span>
 
               <div 
@@ -1380,26 +1391,32 @@
                   isSeekingBarRef.current = true;
                   applySeekFromClientX(e.clientX);
                 }}
-                className="relative flex-1 h-3 flex items-center cursor-pointer group py-1"
+                className="relative flex-1 h-4 flex items-center cursor-pointer group py-1"
               >
-                <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden transition-all group-hover:h-1.5">
+                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden transition-all group-hover:h-2">
                   <div 
-                    className="h-full rounded-full transition-all duration-75"
+                    ref={progressFillRef}
+                    className="h-full rounded-full"
                     style={{ 
-                      width: `${playbackProgress * 100}%`,
+                      width: "0%",
                       backgroundColor: activePalette.accent,
                       boxShadow: `0 0 10px ${activePalette.glow}`
                     }}
                   />
                 </div>
                 <div 
-                  className="absolute w-2.5 h-2.5 rounded-full bg-white shadow-md transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ left: `${playbackProgress * 100}%` }}
+                  ref={progressThumbRef}
+                  className="absolute w-3 h-3 rounded-full shadow-lg transform -translate-x-1/2 scale-0 group-hover:scale-100 active:scale-125 transition-transform duration-100 pointer-events-none"
+                  style={{ 
+                    left: "0%",
+                    backgroundColor: activePalette.accent,
+                    boxShadow: `0 0 12px ${activePalette.glow}`
+                  }}
                 />
               </div>
 
-              <span className="text-[10px] font-mono opacity-60 w-9 tabular-nums">
-                {durationFormatted}
+              <span ref={timeDurationRef} className="text-[10px] sm:text-xs font-mono font-medium opacity-70 w-10 tabular-nums">
+                00:00
               </span>
             </div>
 
@@ -1446,7 +1463,7 @@
               </div>
 
               <div
-                className="pointer-events-auto flex items-center space-x-2 sm:space-x-3 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-lg text-[9px] sm:text-xs font-medium tracking-wide"
+                className="pointer-events-auto flex items-center space-x-2 sm:space-x-3 px-3 py-1.5 sm:px-4 py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-lg text-[9px] sm:text-xs font-medium tracking-wide"
                 style={{ color: activePalette.ink }}
               >
                 <span className="opacity-70 hidden sm:inline">Scroll disc/seeker to skip</span>

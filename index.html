@@ -1,1 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Audio Specimen Visualizer</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+  <style>
+    html, body, #root {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #060607;
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body class="select-none">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const PALETTES = [
+      {
+        name: "MONOLITH",
+        bg: "#060607",
+        ink: "#f0f0f2",
+        accent: "#ffffff",
+        glow: "rgba(255, 255, 255, 0.4)",
+        textGlow: "0 0 20px rgba(255, 255, 255, 0.4)",
+        lensTint: "rgba(255, 255, 255, 0.05)",
+        discSheen: "#0c0c10",
+        discRing: "#ffffff",
+        reticle: "#ffffff",
+        gridColor: "rgba(255, 255, 255, 0.1)",
+        tag: "MINIMAL",
+        grooveBase: "255, 255, 255",
+        iridescentSheen: ["rgba(255,255,255,0.1)", "rgba(200,200,200,0.2)", "rgba(255,255,255,0.1)", "rgba(150,150,150,0.2)"]
+      },
+      {
+        name: "CYBERPUNK",
+        bg: "#0b0213",
+        ink: "#e0f2fe",
+        accent: "#ff00ff",
+        glow: "rgba(255, 0, 255, 0.6)",
+        textGlow: "0 0 20px rgba(255, 0, 255, 0.6)",
+        lensTint: "rgba(0, 255, 255, 0.1)",
+        discSheen: "#1a0529",
+        discRing: "#00ffff",
+        reticle: "#ff00ff",
+        gridColor: "rgba(0, 255, 255, 0.15)",
+        tag: "NEON",
+        grooveBase: "255, 255, 255",
+        iridescentSheen: ["rgba(255,0,255,0.4)", "rgba(0,255,255,0.4)", "rgba(128,0,255,0.4)", "rgba(255,0,128,0.4)"]
+      },
+      {
+        name: "CUTESY",
+        bg: "#fff0f5",
+        ink: "#2d1f25",
+        accent: "#ff69b4",
+        glow: "rgba(255, 105, 180, 0.4)",
+        textGlow: "0 2px 15px rgba(255,105,180,0.5), 0 2px 4px rgba(0,0,0,0.3)",
+        lensTint: "rgba(255, 182, 193, 0.1)",
+        discSheen: "#ffe4e1",
+        discRing: "#ff69b4",
+        reticle: "#ff1493",
+        gridColor: "rgba(255, 105, 180, 0.25)",
+        tag: "PASTEL",
+        grooveBase: "200, 80, 130",
+        iridescentSheen: ["rgba(255,182,193,0.5)", "rgba(255,218,185,0.5)", "rgba(230,230,250,0.5)", "rgba(176,224,230,0.5)"]
+      },
+      {
+        name: "CHILL",
+        bg: "#111827",
+        ink: "#f3f4f6",
+        accent: "#3b82f6",
+        glow: "rgba(59, 130, 246, 0.5)",
+        textGlow: "0 0 20px rgba(59, 130, 246, 0.5)",
+        lensTint: "rgba(96, 165, 250, 0.1)",
+        discSheen: "#1f2937",
+        discRing: "#3b82f6",
+        reticle: "#60a5fa",
+        gridColor: "rgba(96, 165, 250, 0.12)",
+        tag: "RELAX",
+        grooveBase: "255, 255, 255",
+        iridescentSheen: ["rgba(59,130,246,0.3)", "rgba(16,185,129,0.3)", "rgba(139,92,246,0.3)", "rgba(56,189,248,0.3)"]
+      }
+    ];
+
+    function drawDiscCanvas(ctx, palette) {
+      const cx = 1024, cy = 1024;
+      ctx.clearRect(0, 0, 2048, 2048);
+      ctx.fillStyle = palette.discSheen;
+      ctx.fillRect(0, 0, 2048, 2048);
+
+      const gBase = palette.grooveBase || "255, 255, 255";
+      for (let r = 320; r < 980; r += 2.5) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        const isTrack = r % 30 === 0;
+        ctx.strokeStyle = isTrack ? `rgba(${gBase}, 0.25)` : `rgba(${gBase}, 0.06)`;
+        ctx.lineWidth = isTrack ? 1.6 : 0.8;
+        ctx.stroke();
+      }
+
+      const rainbow = ctx.createConicGradient(Math.PI / 4, cx, cy);
+      const sheens = palette.iridescentSheen;
+      rainbow.addColorStop(0.0, "rgba(255,255,255,0.04)");
+      rainbow.addColorStop(0.08, sheens[0]);
+      rainbow.addColorStop(0.18, "rgba(255,255,255,0.9)");
+      rainbow.addColorStop(0.28, sheens[1]);
+      rainbow.addColorStop(0.40, "rgba(255,255,255,0.04)");
+      rainbow.addColorStop(0.58, sheens[2]);
+      rainbow.addColorStop(0.68, "rgba(255,255,255,0.9)");
+      rainbow.addColorStop(0.78, sheens[3]);
+      rainbow.addColorStop(0.92, sheens[0]);
+      rainbow.addColorStop(1.0, "rgba(255,255,255,0.04)");
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 978, 0, Math.PI * 2);
+      ctx.fillStyle = rainbow;
+      ctx.fill();
+
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 310, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    function parseLRC(lrcString) {
+      if (!lrcString) return [];
+      const lines = lrcString.split("\n");
+      const parsed = [];
+      const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/;
+
+      for (let line of lines) {
+        const match = timeRegex.exec(line);
+        if (match) {
+          const mins = parseInt(match[1], 10);
+          const secs = parseInt(match[2], 10);
+          const ms = match[3] ? parseFloat("0." + match[3].padEnd(3, "0")) : 0;
+          const totalSecs = mins * 60 + secs + ms;
+          const text = line.replace(timeRegex, "").trim();
+          if (text && !text.startsWith("[") && !text.toLowerCase().includes("lyrics by") && !text.toLowerCase().includes("sync by")) {
+            parsed.push({ time: totalSecs, text });
+          }
+        }
+      }
+      return parsed.sort((a, b) => a.time - b.time);
+    }
+
+    function cleanTrackString(str) {
+      return str
+        .replace(/\.(mp3|wav|m4a|aac|ogg|flac)$/i, "")
+        .replace(/\[.*?\]|\(.*?\)/g, "")
+        .replace(/feat\..*|ft\..*/i, "")
+        .replace(/- topic/i, "")
+        .replace(/[_\-+]/g, " ")
+        .trim();
+    }
+
+    function formatTime(secs) {
+      if (!secs || isNaN(secs) || secs < 0) return "00:00";
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    function App() {
+      const [paletteIndex, setPaletteIndex] = useState(0);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [audioSourceType, setAudioSourceType] = useState("idle");
+      const [trackMeta, setTrackMeta] = useState({ title: "CASE FILE: NO AUDIO", artist: "STANDBY" });
+      const [lyrics, setLyrics] = useState([]);
+      const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+      const [activeWordIndex, setActiveWordIndex] = useState(-1);
+      const [lyricStatus, setLyricStatus] = useState("STANDBY");
+      const [isLoadingStream, setIsLoadingStream] = useState(false);
+      const [loadingText, setLoadingText] = useState("PARSING AUDIO FEED...");
+      
+      const [playbackProgress, setPlaybackProgress] = useState(0);
+      const [currentTimeFormatted, setCurrentTimeFormatted] = useState("00:00");
+      const [durationFormatted, setDurationFormatted] = useState("00:00");
+      const [volume, setVolume] = useState(1.0);
+      const [isMuted, setIsMuted] = useState(false);
+
+      const canvasRef = useRef(null);
+      const threeMountRef = useRef(null);
+      const threeContextRef = useRef(null);
+      const audioRef = useRef(null);
+      const audioCtxRef = useRef(null);
+      const analyserRef = useRef(null);
+      const sourceNodeRef = useRef(null);
+      const fileInputRef = useRef(null);
+      const progressBarRef = useRef(null);
+      const volumeBarRef = useRef(null);
+
+      const isDraggingRef = useRef(false);
+      const dragStartPosRef = useRef({ x: 0, y: 0 });
+      const clickStartPosRef = useRef({ x: 0, y: 0 });
+      const dragStartTimeRef = useRef(0);
+      const dragVelocityRef = useRef({ x: 0, y: 0 });
+      const discRotRef = useRef({ x: 0.52, y: -0.22, z: 0 });
+      const isHoveredRef = useRef(false);
+      const hoverTargetRef = useRef(null);
+      const scrollMomentumRef = useRef(0);
+      const isPlayingRef = useRef(false);
+      const spinVelocityRef = useRef(0);
+      const scaleVelocityRef = useRef(1);
+      const mouseRef = useRef({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+        lerpX: window.innerWidth / 2,
+        lerpY: window.innerHeight / 2
+      });
+      const bassEnergyRef = useRef(0);
+      const audioTimeRef = useRef(0);
+      const lastTimeRef = useRef(performance.now());
+      const lyricsRef = useRef([]);
+      const activeLyricIndexRef = useRef(-1);
+      const activeWordIndexRef = useRef(-1);
+      const isSeekingBarRef = useRef(false);
+      const isDraggingVolRef = useRef(false);
+
+      const activePalette = PALETTES[paletteIndex];
+
+      useEffect(() => {
+        isPlayingRef.current = isPlaying;
+      }, [isPlaying]);
+
+      useEffect(() => {
+        lyricsRef.current = lyrics;
+      }, [lyrics]);
+
+      const fetchLyrics = useCallback(async (rawTitle, rawArtist) => {
+        const title = cleanTrackString(rawTitle);
+        const artist = cleanTrackString(rawArtist);
+
+        if (!title || title === "NO AUDIO LOADED" || title === "IDLE") {
+          setLyrics([]);
+          setLyricStatus("STANDBY");
+          return;
+        }
+
+        setLyricStatus("SEARCHING LRC...");
+
+        try {
+          if (artist && artist !== "UNKNOWN ARTIST" && artist !== "IDLE") {
+            const exactRes = await fetch(
+              `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}`
+            );
+            if (exactRes.ok) {
+              const exactData = await exactRes.json();
+              if (exactData?.syncedLyrics) {
+                const parsed = parseLRC(exactData.syncedLyrics);
+                if (parsed.length > 0) {
+                  setLyrics(parsed);
+                  setLyricStatus("SYNCED");
+                  return;
+                }
+              }
+            }
+          }
+
+          const query = (artist && artist !== "UNKNOWN ARTIST" && artist !== "IDLE") ? `${artist} ${title}` : title;
+          const searchRes = await fetch(
+            `https://lrclib.net/api/search?q=${encodeURIComponent(query)}`
+          );
+
+          if (searchRes.ok) {
+            const results = await searchRes.json();
+            if (Array.isArray(results) && results.length > 0) {
+              const matchWithSync = results.find((r) => r.syncedLyrics && r.syncedLyrics.length > 10);
+              if (matchWithSync) {
+                const parsed = parseLRC(matchWithSync.syncedLyrics);
+                if (parsed.length > 0) {
+                  setLyrics(parsed);
+                  setTrackMeta({
+                    title: matchWithSync.trackName.toUpperCase(),
+                    artist: matchWithSync.artistName.toUpperCase()
+                  });
+                  setLyricStatus("SYNCED");
+                  return;
+                }
+              }
+            }
+          }
+
+          setLyrics([]);
+          setLyricStatus("NO LYRICS");
+        } catch (err) {
+          setLyrics([]);
+          setLyricStatus("NO LYRICS");
+        }
+      }, []);
+
+      const initWebAudio = useCallback(() => {
+        if (!audioRef.current) return;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+
+        if (!audioCtxRef.current) {
+          try {
+            audioCtxRef.current = new AudioCtx();
+          } catch (e) {
+            return;
+          }
+        }
+
+        const ctx = audioCtxRef.current;
+
+        if (!analyserRef.current) {
+          try {
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 128;
+            analyserRef.current = analyser;
+          } catch (e) {
+            return;
+          }
+        }
+
+        if (!sourceNodeRef.current && analyserRef.current) {
+          try {
+            const src = ctx.createMediaElementSource(audioRef.current);
+            src.connect(analyserRef.current);
+            analyserRef.current.connect(ctx.destination);
+            sourceNodeRef.current = src;
+          } catch (e) {
+            return;
+          }
+        }
+
+        if (ctx.state === "suspended") {
+          ctx.resume().catch(() => {});
+        }
+      }, []);
+
+      const togglePlay = () => {
+        if (audioSourceType === "file" && audioRef.current) {
+          initWebAudio();
+          if (isPlaying) {
+            audioRef.current.pause();
+            setIsPlaying(false);
+          } else {
+            audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(true));
+          }
+        }
+      };
+
+      const restartTrack = () => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioTimeRef.current = 0;
+          setPlaybackProgress(0);
+          setCurrentTimeFormatted("00:00");
+          if (!isPlaying && audioSourceType === "file") {
+            initWebAudio();
+            audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(true));
+          }
+        }
+      };
+
+      const handleAudioUpload = (file) => {
+        if (!file || !file.type.startsWith("audio/")) return;
+        setIsLoadingStream(true);
+        setLoadingText("DECODING LOCAL AUDIO SPECIMEN...");
+        initWebAudio();
+        const url = URL.createObjectURL(file);
+
+        setLyrics([]);
+        setActiveLyricIndex(-1);
+        setActiveWordIndex(-1);
+        activeLyricIndexRef.current = -1;
+        activeWordIndexRef.current = -1;
+        setAudioSourceType("file");
+
+        const rawName = file.name.replace(/\.[^/.]+$/, "");
+        let artist = "UNKNOWN ARTIST";
+        let title = rawName;
+
+        if (rawName.includes(" - ")) {
+          const parts = rawName.split(" - ");
+          artist = parts[0].trim();
+          title = parts[1].trim();
+        } else if (rawName.includes("_-_")) {
+          const parts = rawName.split("_-_");
+          artist = parts[0].trim();
+          title = parts[1].trim();
+        }
+
+        setTrackMeta({ title: title.toUpperCase(), artist: artist.toUpperCase() });
+
+        if (audioRef.current) {
+          audioRef.current.src = url;
+          audioRef.current.currentTime = 0;
+          audioTimeRef.current = 0;
+          audioRef.current.load();
+          audioRef.current.play()
+            .then(() => {
+              setIsPlaying(true);
+              setIsLoadingStream(false);
+            })
+            .catch(() => {
+              setIsLoadingStream(false);
+            });
+        }
+
+        fetchLyrics(title, artist);
+      };
+
+      const applySeekFromClientX = (clientX) => {
+        if (!progressBarRef.current || !audioRef.current || !audioRef.current.duration) return;
+        const rect = progressBarRef.current.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const targetTime = ratio * audioRef.current.duration;
+        audioRef.current.currentTime = targetTime;
+        audioTimeRef.current = targetTime;
+        setPlaybackProgress(ratio);
+        setCurrentTimeFormatted(formatTime(targetTime));
+      };
+
+      const applyVolumeFromClientY = (clientY) => {
+        if (!volumeBarRef.current || !audioRef.current) return;
+        const rect = volumeBarRef.current.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height));
+        const newVol = Math.round(ratio * 100) / 100;
+        audioRef.current.volume = newVol;
+        setVolume(newVol);
+        if (newVol > 0 && isMuted) {
+          setIsMuted(false);
+          audioRef.current.muted = false;
+        }
+      };
+
+      const toggleMute = () => {
+        if (!audioRef.current) return;
+        const nextMute = !isMuted;
+        setIsMuted(nextMute);
+        audioRef.current.muted = nextMute;
+      };
+
+      useEffect(() => {
+        const handlePointerMove = (e) => {
+          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+          mouseRef.current.x = clientX;
+          mouseRef.current.y = clientY;
+
+          if (isSeekingBarRef.current) {
+            applySeekFromClientX(clientX);
+          } else if (isDraggingVolRef.current) {
+            applyVolumeFromClientY(clientY);
+          } else if (isDraggingRef.current) {
+            const dx = clientX - dragStartPosRef.current.x;
+            const dy = clientY - dragStartPosRef.current.y;
+            dragVelocityRef.current = { x: dx * 0.006, y: dy * 0.006 };
+            discRotRef.current.y += dx * 0.01;
+            discRotRef.current.x += dy * 0.01;
+            dragStartPosRef.current = { x: clientX, y: clientY };
+          }
+        };
+
+        const handlePointerUp = () => {
+          isDraggingRef.current = false;
+          isSeekingBarRef.current = false;
+          isDraggingVolRef.current = false;
+        };
+
+        const handleWheel = (e) => {
+          const target = hoverTargetRef.current;
+          if (target === "disc" || target === "seeker") {
+            scrollMomentumRef.current += e.deltaY * 0.0025;
+            if (audioSourceType === "file" && audioRef.current && audioRef.current.duration) {
+              const step = (e.deltaY / 120) * 1.5;
+              const nextTime = Math.max(0, Math.min(audioRef.current.duration, audioRef.current.currentTime + step));
+              audioRef.current.currentTime = nextTime;
+              audioTimeRef.current = nextTime;
+            }
+          } else if (target === "volume") {
+            if (audioRef.current) {
+              const step = -(e.deltaY / 120) * 0.05;
+              const nextVol = Math.max(0, Math.min(1, volume + step));
+              const roundedVol = Math.round(nextVol * 100) / 100;
+              audioRef.current.volume = roundedVol;
+              setVolume(roundedVol);
+              if (roundedVol > 0 && isMuted) {
+                setIsMuted(false);
+                audioRef.current.muted = false;
+              }
+            }
+          }
+        };
+
+        window.addEventListener("pointermove", handlePointerMove);
+        window.addEventListener("touchmove", handlePointerMove, { passive: false });
+        window.addEventListener("pointerup", handlePointerUp);
+        window.addEventListener("touchend", handlePointerUp);
+        window.addEventListener("wheel", handleWheel, { passive: true });
+        return () => {
+          window.removeEventListener("pointermove", handlePointerMove);
+          window.removeEventListener("touchmove", handlePointerMove);
+          window.removeEventListener("pointerup", handlePointerUp);
+          window.removeEventListener("touchend", handlePointerUp);
+          window.removeEventListener("wheel", handleWheel);
+        };
+      }, [audioSourceType, volume, isMuted]);
+
+      useEffect(() => {
+        let renderer, scene, camera;
+        let discMesh, centerDiscMesh, hubMesh, progressMesh, vizMesh;
+        let spotLight, rimLight, keyLight, ambientLight;
+        let baseGroup, spinGroup;
+        let texture, texCanvas, tCtx;
+
+        const initThree = () => {
+          if (!threeMountRef.current || !window.THREE) return;
+          const THREE = window.THREE;
+
+          while (threeMountRef.current.firstChild) {
+            threeMountRef.current.removeChild(threeMountRef.current.firstChild);
+          }
+
+          scene = new THREE.Scene();
+          camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
+          camera.position.set(0, 0, 16);
+
+          renderer = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: true,
+            powerPreference: "high-performance",
+            precision: "highp"
+          });
+          renderer.setSize(1024, 1024);
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+          const canvasEl = renderer.domElement;
+          canvasEl.style.position = "absolute";
+          canvasEl.style.left = "50%";
+          canvasEl.style.top = "50%";
+          canvasEl.style.transform = "translate(-50%, -50%)";
+          canvasEl.style.pointerEvents = "none";
+          canvasEl.style.width = "100%";
+          canvasEl.style.height = "100%";
+
+          threeMountRef.current.appendChild(canvasEl);
+
+          baseGroup = new THREE.Group();
+          baseGroup.rotation.x = discRotRef.current.x;
+          baseGroup.rotation.y = discRotRef.current.y;
+          scene.add(baseGroup);
+
+          spinGroup = new THREE.Group();
+          spinGroup.rotation.z = discRotRef.current.z;
+          baseGroup.add(spinGroup);
+
+          texCanvas = document.createElement("canvas");
+          texCanvas.width = 2048;
+          texCanvas.height = 2048;
+          tCtx = texCanvas.getContext("2d");
+
+          drawDiscCanvas(tCtx, activePalette);
+
+          texture = new THREE.CanvasTexture(texCanvas);
+          texture.anisotropy = 16;
+          texture.generateMipmaps = true;
+
+          const geo = new THREE.RingGeometry(0.55, 2.05, 128, 32);
+          const mat = new THREE.MeshStandardMaterial({
+            map: texture,
+            roughness: 0.12,
+            metalness: 0.98,
+            side: THREE.DoubleSide
+          });
+          discMesh = new THREE.Mesh(geo, mat);
+          spinGroup.add(discMesh);
+
+          const clearHubGeo = new THREE.RingGeometry(0.24, 0.54, 64);
+          const clearHubMat = new THREE.MeshPhysicalMaterial({
+            roughness: 0.08,
+            transmission: 0.9,
+            thickness: 0.3,
+            transparent: true,
+            opacity: 0.75,
+            color: 0xffffff,
+            side: THREE.DoubleSide
+          });
+          centerDiscMesh = new THREE.Mesh(clearHubGeo, clearHubMat);
+          spinGroup.add(centerDiscMesh);
+
+          const innerBezelGeo = new THREE.RingGeometry(0.22, 0.25, 48);
+          const innerBezelMat = new THREE.MeshBasicMaterial({
+            color: activePalette.discRing,
+            side: THREE.DoubleSide
+          });
+          hubMesh = new THREE.Mesh(innerBezelGeo, innerBezelMat);
+          spinGroup.add(hubMesh);
+
+          const progressUniforms = {
+            uProgress: { value: 0.0 },
+            uColor: { value: new THREE.Color(activePalette.accent) }
+          };
+
+          const progressMat = new THREE.ShaderMaterial({
+            uniforms: progressUniforms,
+            transparent: true,
+            side: THREE.DoubleSide,
+            vertexShader: `
+              varying vec2 vPos;
+              void main() {
+                vPos = position.xy;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              }
+            `,
+            fragmentShader: `
+              uniform float uProgress;
+              uniform vec3 uColor;
+              varying vec2 vPos;
+              #define TWO_PI 6.28318530718
+              
+              void main() {
+                vec2 p = vPos;
+                float r = 2.11; 
+                float w = 0.035; 
+                
+                float angle = atan(p.x, p.y);
+                if (angle < 0.0) angle += TWO_PI;
+                
+                float targetAngle = uProgress * TWO_PI;
+                float distMid = abs(length(p) - r);
+                
+                float bgAlpha = smoothstep(w + 0.01, w - 0.01, distMid) * 0.12;
+                
+                float arcAlpha = 0.0;
+                float glow = 0.0;
+                float core = 0.0;
+                
+                if (uProgress > 0.0) {
+                    vec2 startPoint = vec2(0.0, r);
+                    vec2 endPoint = vec2(sin(targetAngle) * r, cos(targetAngle) * r);
+                    
+                    float dStart = length(p - startPoint);
+                    float dEnd = length(p - endPoint);
+                    float minCapDist = min(dStart, dEnd);
+                    
+                    if (angle <= targetAngle) {
+                        arcAlpha = smoothstep(w + 0.005, w - 0.005, distMid);
+                        glow = smoothstep(w * 4.0, w, distMid) * 0.5;
+                        core = smoothstep(w * 0.3, 0.0, distMid);
+                    } else {
+                        arcAlpha = smoothstep(w + 0.005, w - 0.005, minCapDist);
+                        glow = smoothstep(w * 4.0, w, minCapDist) * 0.5;
+                        core = smoothstep(w * 0.3, 0.0, minCapDist);
+                    }
+                }
+                
+                float finalAlpha = max(bgAlpha, arcAlpha + glow);
+                vec3 color = uColor;
+                
+                if (arcAlpha > 0.0) {
+                    color = mix(uColor, vec3(1.0), core * 0.8);
+                }
+                
+                gl_FragColor = vec4(color, clamp(finalAlpha, 0.0, 1.0));
+              }
+            `
+          });
+
+          const progressGeo = new THREE.RingGeometry(1.8, 2.4, 128);
+          progressMesh = new THREE.Mesh(progressGeo, progressMat);
+          progressMesh.position.z = 0.01;
+          baseGroup.add(progressMesh);
+
+          const vizUniforms = {
+            uColor: { value: new THREE.Color(activePalette.accent) },
+            uFreqs: { value: new Float32Array(32).fill(0) }
+          };
+
+          const vizMat = new THREE.ShaderMaterial({
+            uniforms: vizUniforms,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            vertexShader: `
+              varying vec2 vPos;
+              void main() {
+                vPos = position.xy;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              }
+            `,
+            fragmentShader: `
+              uniform vec3 uColor;
+              uniform float uFreqs[32];
+              varying vec2 vPos;
+              #define TWO_PI 6.28318530718
+
+              void main() {
+                vec2 p = vPos;
+                float dist = length(p);
+                float angle = atan(p.x, p.y);
+                if (angle < 0.0) angle += TWO_PI;
+
+                float norm = angle / TWO_PI;
+                float sym = 1.0 - abs(norm * 2.0 - 1.0);
+                
+                sym = smoothstep(0.0, 1.0, sym);
+                
+                float exactIdx = sym * 31.0;
+                
+                int i0 = int(floor(exactIdx));
+                int i1 = int(min(float(i0) + 1.0, 31.0));
+                float f = fract(exactIdx);
+                
+                float f3 = f * f * (3.0 - 2.0 * f);
+                
+                float v0 = 0.0;
+                float v1 = 0.0;
+                for (int j = 0; j < 32; j++) {
+                  if (j == i0) v0 = uFreqs[j];
+                  if (j == i1) v1 = uFreqs[j];
+                }
+                
+                float val = mix(v0, v1, f3);
+
+                float rBase = 2.45; 
+                float rTarget = rBase + (val * 0.7); 
+
+                float thickness = 0.012 + (val * 0.01);
+                float d = abs(dist - rTarget);
+                
+                float alpha = smoothstep(thickness + 0.015, thickness - 0.005, d);
+                float glow = smoothstep(0.15, 0.0, d) * 0.6 * val;
+                float core = smoothstep(0.005, 0.0, d) * val;
+
+                vec3 finalColor = mix(uColor, vec3(1.0), core * 0.8); 
+                
+                gl_FragColor = vec4(finalColor, clamp(alpha + glow, 0.0, 1.0));
+              }
+            `
+          });
+
+          const vizGeo = new THREE.RingGeometry(2.3, 3.8, 256);
+          vizMesh = new THREE.Mesh(vizGeo, vizMat);
+          vizMesh.position.z = 0.005;
+          baseGroup.add(vizMesh);
+
+          ambientLight = new THREE.AmbientLight(0xffffff, 2.4);
+          scene.add(ambientLight);
+
+          keyLight = new THREE.DirectionalLight(0xffffff, 4.2);
+          keyLight.position.set(5, 7, 8);
+          scene.add(keyLight);
+
+          spotLight = new THREE.PointLight(activePalette.discRing, 7.0, 25);
+          spotLight.position.set(-4, -4, 6);
+          scene.add(spotLight);
+
+          rimLight = new THREE.PointLight(0xffffff, 3.5, 18);
+          rimLight.position.set(0, 0, 5);
+          scene.add(rimLight);
+
+          threeContextRef.current = {
+            renderer,
+            scene,
+            camera,
+            baseGroup,
+            spinGroup,
+            spotLight,
+            rimLight,
+            hubMesh,
+            progressMat,
+            vizUniforms,
+            texCanvas,
+            tCtx,
+            texture,
+            geo,
+            mat,
+            clearHubGeo,
+            clearHubMat,
+            innerBezelGeo,
+            innerBezelMat,
+            progressGeo,
+            vizGeo,
+            vizMat
+          };
+        };
+
+        if (window.THREE) {
+          initThree();
+        }
+
+        return () => {
+          if (threeContextRef.current) {
+            const c = threeContextRef.current;
+            if (c.geo) c.geo.dispose();
+            if (c.mat) c.mat.dispose();
+            if (c.clearHubGeo) c.clearHubGeo.dispose();
+            if (c.clearHubMat) c.clearHubMat.dispose();
+            if (c.innerBezelGeo) c.innerBezelGeo.dispose();
+            if (c.innerBezelMat) c.innerBezelMat.dispose();
+            if (c.progressGeo) c.progressGeo.dispose();
+            if (c.progressMat) c.progressMat.dispose();
+            if (c.vizGeo) c.vizGeo.dispose();
+            if (c.vizMat) c.vizMat.dispose();
+            if (c.texture) c.texture.dispose();
+            if (c.renderer) {
+              c.renderer.dispose();
+              if (c.renderer.domElement && c.renderer.domElement.parentNode) {
+                c.renderer.domElement.parentNode.removeChild(c.renderer.domElement);
+              }
+            }
+            threeContextRef.current = null;
+          }
+        };
+      }, []);
+
+      useEffect(() => {
+        if (!threeContextRef.current || !window.THREE) return;
+        const c = threeContextRef.current;
+
+        drawDiscCanvas(c.tCtx, activePalette);
+        c.texture.needsUpdate = true;
+
+        if (c.hubMesh && c.hubMesh.material) {
+          c.hubMesh.material.color.set(activePalette.discRing);
+        }
+
+        if (c.spotLight) {
+          c.spotLight.color.set(activePalette.discRing);
+        }
+
+        if (c.progressMat && c.progressMat.uniforms.uColor) {
+          c.progressMat.uniforms.uColor.value.set(activePalette.accent);
+        }
+
+        if (c.vizUniforms && c.vizUniforms.uColor) {
+          c.vizUniforms.uColor.value.set(activePalette.accent);
+        }
+      }, [activePalette]);
+
+      useEffect(() => {
+        let animId;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const freqData = new Uint8Array(64);
+
+        const loop = (timestamp) => {
+          lastTimeRef.current = timestamp;
+
+          if (audioSourceType === "file" && audioRef.current && !audioRef.current.paused) {
+            audioTimeRef.current = audioRef.current.currentTime;
+            const dur = audioRef.current.duration || 1;
+            const prog = audioRef.current.currentTime / dur;
+            setPlaybackProgress(prog);
+            setCurrentTimeFormatted(formatTime(audioRef.current.currentTime));
+            setDurationFormatted(formatTime(dur));
+          }
+
+          if (audioSourceType === "file" && analyserRef.current) {
+            analyserRef.current.getByteFrequencyData(freqData);
+            let sumBass = 0;
+            for (let i = 0; i < 6; i++) sumBass += freqData[i];
+            const currentBass = (sumBass / 6) / 255;
+            bassEnergyRef.current += (currentBass - bassEnergyRef.current) * 0.35;
+
+            if (threeContextRef.current?.vizUniforms) {
+              const freqs = threeContextRef.current.vizUniforms.uFreqs.value;
+              for (let i = 0; i < 32; i++) {
+                let v = freqData[i] / 255.0;
+                v = v * v * 1.5;
+                freqs[i] += (v - freqs[i]) * 0.18;
+              }
+              threeContextRef.current.vizUniforms.uFreqs.value = freqs;
+            }
+          } else {
+            bassEnergyRef.current *= 0.9;
+
+            if (threeContextRef.current?.vizUniforms) {
+              const freqs = threeContextRef.current.vizUniforms.uFreqs.value;
+              for (let i = 0; i < 32; i++) {
+                freqs[i] *= 0.9;
+              }
+              threeContextRef.current.vizUniforms.uFreqs.value = freqs;
+            }
+          }
+
+          const currentLyrics = lyricsRef.current;
+          if (currentLyrics.length > 0) {
+            const currTime = audioTimeRef.current;
+            let matchedIdx = -1;
+            let low = 0;
+            let high = currentLyrics.length - 1;
+
+            while (low <= high) {
+              const mid = (low + high) >> 1;
+              if (currentLyrics[mid].time <= currTime) {
+                matchedIdx = mid;
+                low = mid + 1;
+              } else {
+                high = mid - 1;
+              }
+            }
+
+            if (matchedIdx !== activeLyricIndexRef.current) {
+              activeLyricIndexRef.current = matchedIdx;
+              setActiveLyricIndex(matchedIdx);
+            }
+
+            if (matchedIdx >= 0) {
+              const currentLineObj = currentLyrics[matchedIdx];
+              const nextTime = currentLyrics[matchedIdx + 1] ? currentLyrics[matchedIdx + 1].time : currentLineObj.time + 3.2;
+              const duration = Math.max(nextTime - currentLineObj.time, 0.5);
+              const elapsed = Math.max(0, currTime - currentLineObj.time);
+              const ratio = Math.min(Math.max(elapsed / duration, 0), 1);
+
+              const words = currentLineObj.text.split(/\s+/).filter(Boolean);
+              if (words.length > 0) {
+                const calculatedWordIdx = Math.min(Math.floor(ratio * words.length), words.length - 1);
+                if (calculatedWordIdx !== activeWordIndexRef.current) {
+                  activeWordIndexRef.current = calculatedWordIdx;
+                  setActiveWordIndex(calculatedWordIdx);
+                }
+              } else {
+                if (activeWordIndexRef.current !== -1) {
+                  activeWordIndexRef.current = -1;
+                  setActiveWordIndex(-1);
+                }
+              }
+            } else {
+              if (activeWordIndexRef.current !== -1) {
+                activeWordIndexRef.current = -1;
+                setActiveWordIndex(-1);
+              }
+            }
+          } else {
+            if (activeLyricIndexRef.current !== -1) {
+              activeLyricIndexRef.current = -1;
+              setActiveLyricIndex(-1);
+            }
+            if (activeWordIndexRef.current !== -1) {
+              activeWordIndexRef.current = -1;
+              setActiveWordIndex(-1);
+            }
+          }
+
+          if (!isDraggingRef.current) {
+            discRotRef.current.y += dragVelocityRef.current.x;
+            discRotRef.current.x += dragVelocityRef.current.y;
+            dragVelocityRef.current.x *= 0.93;
+            dragVelocityRef.current.y *= 0.93;
+          }
+
+          if (Math.abs(scrollMomentumRef.current) > 0.001) {
+            discRotRef.current.z += scrollMomentumRef.current * 0.35;
+            scrollMomentumRef.current *= 0.88;
+          }
+
+          const targetSpin = isPlayingRef.current ? 0.016 + bassEnergyRef.current * 0.03 : 0;
+          spinVelocityRef.current += (targetSpin - spinVelocityRef.current) * 0.05;
+          discRotRef.current.z += spinVelocityRef.current;
+
+          if (threeContextRef.current?.baseGroup && threeContextRef.current?.spinGroup) {
+            const bg = threeContextRef.current.baseGroup;
+            const sg = threeContextRef.current.spinGroup;
+
+            bg.rotation.x = discRotRef.current.x;
+            bg.rotation.y = discRotRef.current.y;
+            sg.rotation.z = discRotRef.current.z;
+
+            const hoverBoost = isHoveredRef.current ? 0.04 : 0;
+            const playScale = isPlayingRef.current ? 1.0 : 0.88;
+            scaleVelocityRef.current += (playScale - scaleVelocityRef.current) * 0.08;
+            const targetScale = scaleVelocityRef.current + hoverBoost + (isPlayingRef.current ? bassEnergyRef.current * 0.05 : 0);
+            bg.scale.set(targetScale, targetScale, targetScale);
+
+            if (threeContextRef.current.spotLight) {
+              threeContextRef.current.spotLight.intensity = isHoveredRef.current ? 14.0 : 7.0;
+            }
+            if (threeContextRef.current.rimLight) {
+              threeContextRef.current.rimLight.intensity = isHoveredRef.current ? 7.0 : 3.5;
+            }
+
+            if (threeContextRef.current.progressMat) {
+              const rawDuration = audioRef.current?.duration;
+              const validDuration = typeof rawDuration === "number" && isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 1;
+              const currentTime = audioRef.current?.currentTime || 0;
+              const progress = (validDuration > 1 && currentTime > 0) ? currentTime / validDuration : 0;
+              threeContextRef.current.progressMat.uniforms.uProgress.value = progress;
+            }
+
+            threeContextRef.current.renderer.render(
+              threeContextRef.current.scene,
+              threeContextRef.current.camera
+            );
+          }
+
+          if (canvas.width !== window.innerWidth) canvas.width = window.innerWidth;
+          if (canvas.height !== window.innerHeight) canvas.height = window.innerHeight;
+          const w = canvas.width;
+          const h = canvas.height;
+          ctx.clearRect(0, 0, w, h);
+
+          const m = mouseRef.current;
+          m.lerpX += (m.x - m.lerpX) * 0.12;
+          m.lerpY += (m.y - m.lerpY) * 0.12;
+
+          const lensRadius = Math.min(w, h) * 0.38;
+          const gridStep = 85;
+
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = activePalette.gridColor;
+
+          for (let x = 0; x <= w; x += gridStep) {
+            ctx.beginPath();
+            for (let y = 0; y <= h; y += 24) {
+              let px = x;
+              let py = y;
+              const dx = px - m.lerpX;
+              const dy = py - m.lerpY;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+
+              if (dist < lensRadius && dist > 0) {
+                const factor = Math.sin((dist / lensRadius) * (Math.PI / 2));
+                const warp = 1 + (1 - factor) * (0.34 + bassEnergyRef.current * 0.22);
+                px = m.lerpX + dx * warp;
+                py = m.lerpY + dy * warp;
+              }
+
+              if (y === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+          }
+
+          for (let y = 0; y <= h; y += gridStep) {
+            ctx.beginPath();
+            for (let x = 0; x <= w; x += 24) {
+              let px = x;
+              let py = y;
+              const dx = px - m.lerpX;
+              const dy = py - m.lerpY;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+
+              if (dist < lensRadius && dist > 0) {
+                const factor = Math.sin((dist / lensRadius) * (Math.PI / 2));
+                const warp = 1 + (1 - factor) * (0.34 + bassEnergyRef.current * 0.22);
+                px = m.lerpX + dx * warp;
+                py = m.lerpY + dy * warp;
+              }
+
+              if (x === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+          }
+
+          ctx.beginPath();
+          ctx.arc(m.lerpX, m.lerpY, lensRadius, 0, Math.PI * 2);
+          ctx.strokeStyle = activePalette.lensTint;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(m.lerpX, m.lerpY, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = activePalette.reticle;
+          ctx.fill();
+
+          animId = requestAnimationFrame(loop);
+        };
+
+        animId = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(animId);
+      }, [activePalette, audioSourceType]);
+
+      const getCornerData = (cornerIndex) => {
+        if (activeLyricIndex < 0 || lyrics.length === 0) return { line: null, wordIndex: -1, isCurrent: false };
+
+        let diff = (activeLyricIndex - cornerIndex) % 4;
+        if (diff < 0) diff += 4;
+        const assignedIdx = activeLyricIndex - diff;
+
+        if (assignedIdx < 0) return { line: null, wordIndex: -1, isCurrent: false };
+
+        const isCurrent = assignedIdx === activeLyricIndex;
+        const wordIndex = isCurrent ? activeWordIndex : 9999;
+
+        return { line: lyrics[assignedIdx], wordIndex, isCurrent };
+      };
+
+      const cornerTL = getCornerData(0);
+      const cornerTR = getCornerData(1);
+      const cornerBR = getCornerData(2);
+      const cornerBL = getCornerData(3);
+
+      const renderWordByWord = (lineText, targetWordIdx, isActiveCorner) => {
+        if (!lineText) return null;
+        const words = lineText.split(/\s+/).filter(Boolean);
+        return words.map((word, idx) => {
+          const isPast = idx < targetWordIdx;
+          const isCurrent = idx === targetWordIdx && isActiveCorner;
+
+          let weightClass = "font-thin";
+          let sizeClass = "text-xl sm:text-4xl md:text-5xl lg:text-6xl";
+          let opacityClass = "opacity-30";
+
+          if (isCurrent) {
+            weightClass = "font-black tracking-tight";
+            sizeClass = "text-2xl sm:text-5xl md:text-6xl lg:text-7xl";
+            opacityClass = "opacity-100";
+          } else if (isPast) {
+            weightClass = "font-medium";
+            opacityClass = "opacity-70";
+          }
+
+          return (
+            <span
+              key={idx}
+              className={`inline-block mr-1.5 sm:mr-3 transition-all duration-300 ease-out ${weightClass} ${sizeClass} ${opacityClass} ${
+                isCurrent ? "drop-shadow-lg scale-105" : "scale-100"
+              }`}
+              style={isCurrent ? { color: activePalette.accent, textShadow: activePalette.textGlow } : { color: activePalette.ink }}
+            >
+              {word}
+            </span>
+          );
+        });
+      };
+
+      return (
+        <div
+          className="relative w-screen h-[100dvh] overflow-hidden select-none font-sans transition-colors duration-1000 ease-out flex flex-col justify-between"
+          style={{
+            backgroundColor: activePalette.bg,
+            color: activePalette.ink
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const file = e.dataTransfer?.files?.[0];
+            if (file) handleAudioUpload(file);
+          }}
+        >
+          <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none block" />
+
+          <audio
+            ref={audioRef}
+            preload="auto"
+            onEnded={() => setIsPlaying(false)}
+          />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleAudioUpload(file);
+            }}
+            className="hidden"
+          />
+
+          {isLoadingStream && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xl space-y-4">
+              <div className="flex items-center space-x-3 px-6 py-3 rounded-full bg-white/5 border border-white/10 shadow-xl">
+                <div className="w-2 h-2 rounded-full animate-ping" style={{ backgroundColor: activePalette.accent }} />
+                <span className="text-sm font-medium tracking-wide text-white">{loadingText}</span>
+              </div>
+            </div>
+          )}
+
+          <header className="relative z-30 pt-3 sm:pt-6 px-4 sm:px-8 md:px-12 flex items-center justify-between pointer-events-none w-full">
+            <div className="flex items-center space-x-2.5 sm:space-x-4 pointer-events-auto px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-lg transition-all hover:bg-white/10 max-w-[55%] sm:max-w-[50%]">
+              <div
+                className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full shadow-sm flex-shrink-0 ${isPlaying ? "animate-pulse" : ""}`}
+                style={{ backgroundColor: activePalette.accent, boxShadow: `0 0 10px ${activePalette.glow}` }}
+              />
+              <div className="flex flex-col overflow-hidden" style={{ color: activePalette.ink }}>
+                <span className="text-[8px] sm:text-[10px] font-medium tracking-widest uppercase leading-none mb-1 opacity-60 truncate">
+                  {trackMeta.artist}
+                </span>
+                <span className="text-[11px] sm:text-sm font-bold tracking-wide leading-none opacity-100 truncate">
+                  {trackMeta.title}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-1.5 sm:space-x-3 pointer-events-auto">
+              <div
+                className="hidden md:flex items-center px-4 py-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-md text-xs font-medium tracking-wider"
+                style={{ color: activePalette.ink }}
+              >
+                {lyricStatus}
+              </div>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="text-[9px] sm:text-xs font-medium tracking-wider uppercase px-2.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md hover:bg-white hover:text-black shadow-lg transition-all duration-300 cursor-pointer whitespace-nowrap"
+                style={{ color: activePalette.ink }}
+              >
+                Load
+              </button>
+
+              <button
+                onClick={() => setPaletteIndex((prev) => (prev + 1) % PALETTES.length)}
+                className="text-[9px] sm:text-xs font-bold tracking-wider uppercase px-2.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full shadow-lg transition-all duration-300 cursor-pointer hover:scale-105 whitespace-nowrap"
+                style={{
+                  backgroundColor: activePalette.accent,
+                  color: activePalette.bg,
+                  boxShadow: `0 4px 20px ${activePalette.glow}`
+                }}
+              >
+                {activePalette.name}
+              </button>
+            </div>
+          </header>
+
+          <div 
+            className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center pointer-events-auto group"
+            onMouseEnter={() => { hoverTargetRef.current = "volume"; }}
+            onMouseLeave={() => { hoverTargetRef.current = null; }}
+          >
+            <div className="flex flex-col items-center px-2 py-3 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-xl space-y-3">
+              <button 
+                onClick={toggleMute}
+                className="w-5 h-5 flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity"
+                style={{ color: isMuted ? "#ef4444" : activePalette.ink }}
+                title="Toggle Mute"
+              >
+                {isMuted || volume === 0 ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                  </svg>
+                )}
+              </button>
+
+              <div 
+                ref={volumeBarRef}
+                onPointerDown={(e) => {
+                  isDraggingVolRef.current = true;
+                  applyVolumeFromClientY(e.clientY);
+                }}
+                className="relative w-1.5 h-20 sm:h-24 bg-white/10 rounded-full overflow-hidden cursor-pointer"
+              >
+                <div 
+                  className="absolute bottom-0 left-0 right-0 rounded-full transition-all duration-75"
+                  style={{
+                    height: `${isMuted ? 0 : volume * 100}%`,
+                    backgroundColor: activePalette.accent,
+                    boxShadow: `0 0 8px ${activePalette.glow}`
+                  }}
+                />
+              </div>
+
+              <span className="text-[8px] font-mono opacity-60 tracking-tighter">
+                {isMuted ? "0" : Math.round(volume * 100)}
+              </span>
+            </div>
+          </div>
+
+          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none overflow-visible">
+            <div
+              ref={threeMountRef}
+              onMouseEnter={() => {
+                isHoveredRef.current = true;
+                hoverTargetRef.current = "disc";
+              }}
+              onMouseLeave={() => {
+                isHoveredRef.current = false;
+                hoverTargetRef.current = null;
+              }}
+              onPointerDown={(e) => {
+                isDraggingRef.current = true;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                dragStartPosRef.current = { x: clientX, y: clientY };
+                clickStartPosRef.current = { x: clientX, y: clientY };
+                dragStartTimeRef.current = performance.now();
+                dragVelocityRef.current = { x: 0, y: 0 };
+              }}
+              onPointerUp={(e) => {
+                const dt = performance.now() - dragStartTimeRef.current;
+                const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+                const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+                const dx = clientX - clickStartPosRef.current.x;
+                const dy = clientY - clickStartPosRef.current.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dt < 250 && dist < 12) {
+                  togglePlay();
+                }
+              }}
+              className="relative w-[62vw] h-[62vw] max-w-[260px] max-h-[260px] sm:w-[70vw] sm:h-[70vw] sm:max-w-[360px] sm:max-h-[360px] md:max-w-[420px] md:max-h-[420px] flex items-center justify-center pointer-events-auto cursor-grab active:cursor-grabbing touch-none select-none transition-transform duration-300 ease-out overflow-visible"
+            />
+          </div>
+
+          <div className="absolute inset-0 z-20 pointer-events-none p-4 sm:p-14 flex flex-col justify-between">
+            <div className="flex justify-between items-start mt-12 sm:mt-16">
+              <div
+                className={`max-w-[70%] sm:max-w-xl transition-all duration-700 ease-out ${
+                  cornerTL.isCurrent && cornerTL.line
+                    ? "opacity-100 translate-y-0 scale-100 blur-none"
+                    : "opacity-0 -translate-y-4 scale-95 blur-sm pointer-events-none"
+                }`}
+              >
+                <h1 className="leading-snug">
+                  {cornerTL.line && renderWordByWord(cornerTL.line.text, cornerTL.wordIndex, cornerTL.isCurrent)}
+                </h1>
+              </div>
+
+              <div
+                className={`max-w-[70%] sm:max-w-xl text-right transition-all duration-700 ease-out flex flex-col items-end ${
+                  cornerTR.isCurrent && cornerTR.line
+                    ? "opacity-100 translate-y-0 scale-100 blur-none"
+                    : "opacity-0 -translate-y-4 scale-95 blur-sm pointer-events-none"
+                }`}
+              >
+                <h1 className="leading-snug">
+                  {cornerTR.line && renderWordByWord(cornerTR.line.text, cornerTR.wordIndex, cornerTR.isCurrent)}
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-end mb-28 sm:mb-32">
+              <div
+                className={`max-w-[70%] sm:max-w-xl transition-all duration-700 ease-out ${
+                  cornerBL.isCurrent && cornerBL.line
+                    ? "opacity-100 translate-y-0 scale-100 blur-none"
+                    : "opacity-0 translate-y-4 scale-95 blur-sm pointer-events-none"
+                }`}
+              >
+                <h1 className="leading-snug">
+                  {cornerBL.line && renderWordByWord(cornerBL.line.text, cornerBL.wordIndex, cornerBL.isCurrent)}
+                </h1>
+              </div>
+
+              <div
+                className={`max-w-[70%] sm:max-w-xl text-right transition-all duration-700 ease-out flex flex-col items-end ${
+                  cornerBR.isCurrent && cornerBR.line
+                    ? "opacity-100 translate-y-0 scale-100 blur-none"
+                    : "opacity-0 translate-y-4 scale-95 blur-sm pointer-events-none"
+                }`}
+              >
+                <h1 className="leading-snug">
+                  {cornerBR.line && renderWordByWord(cornerBR.line.text, cornerBR.wordIndex, cornerBR.isCurrent)}
+                </h1>
+              </div>
+            </div>
+          </div>
+
+          <footer className="relative z-30 pb-[max(1rem,env(safe-area-inset-bottom))] px-4 sm:px-8 md:px-12 flex flex-col items-center w-full mb-1 sm:mb-2 space-y-2 pointer-events-none">
+            <div 
+              className="w-full max-w-xl pointer-events-auto flex items-center space-x-3 px-4 py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-lg"
+              onMouseEnter={() => { hoverTargetRef.current = "seeker"; }}
+              onMouseLeave={() => { hoverTargetRef.current = null; }}
+            >
+              <span className="text-[10px] font-mono opacity-60 w-9 text-right tabular-nums">
+                {currentTimeFormatted}
+              </span>
+
+              <div 
+                ref={progressBarRef}
+                onPointerDown={(e) => {
+                  isSeekingBarRef.current = true;
+                  applySeekFromClientX(e.clientX);
+                }}
+                className="relative flex-1 h-3 flex items-center cursor-pointer group py-1"
+              >
+                <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden transition-all group-hover:h-1.5">
+                  <div 
+                    className="h-full rounded-full transition-all duration-75"
+                    style={{ 
+                      width: `${playbackProgress * 100}%`,
+                      backgroundColor: activePalette.accent,
+                      boxShadow: `0 0 10px ${activePalette.glow}`
+                    }}
+                  />
+                </div>
+                <div 
+                  className="absolute w-2.5 h-2.5 rounded-full bg-white shadow-md transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ left: `${playbackProgress * 100}%` }}
+                />
+              </div>
+
+              <span className="text-[10px] font-mono opacity-60 w-9 tabular-nums">
+                {durationFormatted}
+              </span>
+            </div>
+
+            <div className="w-full max-w-xl flex items-center justify-between">
+              <div className="flex items-center space-x-2 pointer-events-auto">
+                <button
+                  onClick={restartTrack}
+                  disabled={audioSourceType === "idle"}
+                  className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full backdrop-blur-md transition-all duration-300 shadow-md ${
+                    audioSourceType === "idle" ? "opacity-30 cursor-not-allowed bg-white/5 border border-white/10" : "bg-white/5 border border-white/10 hover:bg-white/15 active:scale-95 cursor-pointer"
+                  }`}
+                  style={{ color: activePalette.ink }}
+                  title="Restart Track (00:00)"
+                >
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={togglePlay}
+                  disabled={audioSourceType === "idle"}
+                  className={`flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full backdrop-blur-md transition-all duration-300 shadow-lg cursor-pointer ${
+                    audioSourceType === "idle" ? "opacity-40 cursor-not-allowed bg-white/5 border border-white/10" : "hover:scale-105 active:scale-95"
+                  }`}
+                  style={audioSourceType !== "idle" ? {
+                    backgroundColor: isPlaying ? "rgba(255,255,255,0.1)" : activePalette.accent,
+                    color: isPlaying ? activePalette.ink : activePalette.bg,
+                    border: `1px solid ${isPlaying ? "rgba(255,255,255,0.2)" : "transparent"}`
+                  } : {}}
+                  title={isPlaying ? "Pause" : "Play"}
+                >
+                  {audioSourceType === "idle" ? (
+                    <div className="w-2.5 h-2.5 rounded-full bg-white/30" />
+                  ) : isPlaying ? (
+                    <div className="flex space-x-1">
+                      <div className="w-1 h-3 rounded-sm bg-current" />
+                      <div className="w-1 h-3 rounded-sm bg-current" />
+                    </div>
+                  ) : (
+                    <div className="w-0 h-0 border-t-[5px] border-t-transparent border-l-[8px] border-l-current border-b-[5px] border-b-transparent ml-0.5" />
+                  )}
+                </button>
+              </div>
+
+              <div
+                className="pointer-events-auto flex items-center space-x-2 sm:space-x-3 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-lg text-[9px] sm:text-xs font-medium tracking-wide"
+                style={{ color: activePalette.ink }}
+              >
+                <span className="opacity-70 hidden sm:inline">Scroll disc/seeker to skip</span>
+                <span className="w-1 h-1 rounded-full opacity-40 hidden sm:block" style={{ backgroundColor: activePalette.ink }}></span>
+                <span className="opacity-70">{lyrics.length > 0 ? `${String(activeLyricIndex + 1).padStart(2, "0")} / ${String(lyrics.length).padStart(2, "0")}` : "00 / 00"}</span>
+              </div>
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
